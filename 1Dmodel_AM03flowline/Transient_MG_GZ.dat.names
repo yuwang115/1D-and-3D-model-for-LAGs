@@ -1,0 +1,21 @@
+Variables in file: ./Transient_MG_GZ.dat
+Elmer version: 8.4
+Elmer revision: 157dcc75
+Elmer compilation date: 2020-10-24
+Solver input file: transient_mg_gz.sif
+File started at: 2021/04/25 20:32:29
+Number of data nodes for each step
+  bc nodes: 0
+  polyline nodes: 100
+  circle nodes: 0
+  isocurve nodes: 0
+Data on different columns
+  1: Time step
+  2: Iteration step
+  3: Boundary condition
+  4: Node index
+  5: coordinate 1
+  6: coordinate 2
+  7: coordinate 3
+  8: temperature
+  9: depth

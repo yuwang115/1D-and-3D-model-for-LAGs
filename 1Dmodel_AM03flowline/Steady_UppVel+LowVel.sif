@@ -1,0 +1,217 @@
+
+!---LUA BEGIN
+! assert(loadfile('COLD.lua'))()
+! assert(loadfile('Column.lua'))()
+! assert(loadfile('LAGS.lua'))()
+!---LUA END
+
+$name = "Steady_UppVel+LowVel"
+
+Header
+  Mesh DB "." "#meshdb#"
+End
+
+Constants
+!  Water Density = Real #rhoo
+  ! needed for rheology
+  Gas Constant = Real 8.314 !Joule/mol x  K 
+End
+
+Simulation
+  Coordinate System = Cartesian 3D
+
+  Simulation Type = Steady
+  Timestepping Method = "BDF"
+  BDF Order = 1
+
+  Steady State Min Iterations = 1
+  Steady State Max Iterations = 20
+  
+  Output Intervals(1) = 1
+
+  Initialize Dirichlet Conditions = Logical False
+
+  Output File = $name".result"
+
+  Max Output Level = 3
+
+  Extruded Mesh Levels = Integer #MLEV
+End
+
+Body 1
+  Name = "IceColumn"
+  Equation = 1
+  Material = 1
+  Body Force = 1
+  Initial Condition = 1
+End
+
+Initial Condition 1
+  Temperature = Real 263.0
+  Vertical Velocity = Variable Coordinate 3
+       real lua "SmbBmbProfile(tx[0],-0.1,0)" !!!!!!!!
+End
+
+Body Force 1
+  Temperature Volume Source = Real 0.0
+End
+
+Material 1
+  Density =  Real #rhoi
+
+  Critical Shear Rate = Real 1.0e-12
+
+  ! constant velocity for temperate ice solver
+  Convection Velocity 1 = Real 0.0
+  Convection Velocity 2 = Real 0.0 
+  Convection Velocity 3 = Equals Vertical Velocity
+
+  ! Viscosity has to be set to a dummy value
+  ! to avoid warning output from Elmer
+  Viscosity = Real 1.0
+  
+  Temperature Heat Capacity = Variable Temperature
+    Real lua "capacity(tx[0])*yearinsec^(2.0)"
+
+  Temperature Heat Conductivity = Variable Temperature
+    Real lua "conductivity(tx[0])*yearinsec*Pa2MPa"
+
+!  Temperature Upper Limit = Real 273.15
+  Temperature Upper Limit = Variable depth
+    Real lua "pressuremelting_d(tx[0])"
+
+  ! lower limit (to be safe) as 0 K
+  !--------------------------------
+  Temperature Lower Limit = Real 0.0
+End
+
+Equation 1 
+  Active Solvers(5) = 1 2 3 4 5
+  Convection = Constant
+End
+
+Solver 1
+  Exec Solver = Before simulation
+  Equation = "MapCoordinate"
+  Procedure = "StructuredMeshMapper" "StructuredMeshMapper"
+  Active Coordinate = Integer 3
+
+  Dot Product Tolerance = Real 0.001
+  Minimum Height = Real 20.0
+  Correct Surface = Logical True
+
+  Top Surface Level = Real #UppSurf
+  Bottom Surface Level = Real #LowSurf
+
+!  Top Surface Level = Variable Coordinate 3 
+!    Real lua "UpperSurface(1000.0)"
+!  Bottom Surface Level = Variable Coordinate 3
+!    Real lua "LowerSurface(1000.0)"
+
+!  Mesh Velocity First Zero = Logical True
+End
+
+Solver 2
+  Exec Solver = "before Timestep"
+  Equation = "HeightDepth"
+  Procedure = "StructuredProjectToPlane" "StructuredProjectToPlane"
+  Active Coordinate = Integer 3
+  Operator 1 = depth
+  Operator 2 = height
+End
+
+Solver 3
+  Equation = String "Homologous Temperature Equation"
+  Procedure =  File "ElmerIceSolvers" "TemperateIceSolver"
+  ! Comment next line in parallel, as EliminateDirichlet does
+  ! not work in parallel
+  !------------------------------------------------------------
+  !Before Linsolve = "EliminateDirichlet" "EliminateDirichlet"
+  Variable = String "Temperature"
+  Variable DOFs = 1
+                                                                             
+  Linear System Solver = Direct
+  Linear System Direct Method = mumps
+!  mumps percentage increase working space = integer 100
+!  Linear System Direct Method = cPardiso
+
+!  Linear System Solver = "Iterative"
+!  Linear System Iterative Method = "BiCGStabL"
+!  Linear System Iterative Method = "BiCGStab"
+!  Bicgstabl Polynomial Degree = 4
+  Linear System Max Iterations = 500
+  Linear System Convergence Tolerance = 1.0E-05
+  Linear System Abort Not Converged = True
+!  Linear System Preconditioning = "ILU2"
+!  Linear System Preconditioning = "ILU1"
+!  Linear System Preconditioning = "ILU0"
+!  Linear System Preconditioning = "None"
+  Linear System Residual Output = 1
+  Steady State Convergence Tolerance = 1.0E-04
+  Nonlinear System Convergence Tolerance = 1.0E-06
+  Nonlinear System Max Iterations = 100
+  Nonlinear System Relaxation Factor = 0.8
+  ! uses the contact algorithm (aka Dirichlet algorithm)
+  !-----------------------------------------------------
+  Apply Dirichlet = Logical True
+  Stabilize = True
+  ! those two variables are needed in order to store
+  ! the relative or homologous temperature as well
+  ! as the residual
+  !-------------------------------------------------
+  Exported Variable 1 = String "Temperature Homologous"
+  Exported Variable 1 DOFs = 1
+  Exported Variable 2 = String "Temperature Residual"
+  Exported Variable 2 DOFs = 1
+  Exported Variable 3 = String "Vertical Velocity"
+  Exported Variable 3 DOFs = 1
+
+  Loop While Unconstrained Nodes = Logical True
+End
+
+Solver 4
+  Exec Solver = After Simulation
+  Equation = SaveLine
+  Procedure = "SaveData" "SaveLine"
+  Filename = "Steady_UppVel+LowVel.dat"
+  Polyline Coordinates(2,3) = 500.0 500.0 -1000 500.0 500.0 3000
+  Variable 1 = string temperature
+  Variable 2 = string depth
+End
+
+Solver 5
+  Exec Solver = String "after timestep"
+  Equation = String "ResultOutput"
+  Procedure = File "ResultOutputSolve" "ResultOutputSolver"
+  Output Directory = File #outdir
+  Output File Name  = file "Output_$name""  !"
+  Output Format = String "vtu"
+  Vtu Format = logical true
+  Binary Output = True
+  Single Precision = True
+  Save Geometry Ids = Logical True
+!  Scalar Field 4 = Height
+!  Scalar Field 5 = Depth
+!  Scalar Field 6 = Temperature Homologous
+!  Scalar Field 6 = Temperature
+  Flow Solver Name = String "Flow Solution"
+  Flow Loads Name = String "Flow Solution Loads"
+End
+
+Boundary Condition 1 
+  Name = "sides"
+  Target Boundaries(1) = 1 
+End
+
+Boundary Condition 2
+  Name = "bottom"
+  Target Boundaries(1) = 2
+  Temperature = real #LowTemp
+End
+
+Boundary Condition 3
+  Name = "top"
+  Target Boundaries(1) = 3
+  Temperature = real #UppTemp
+End
+
