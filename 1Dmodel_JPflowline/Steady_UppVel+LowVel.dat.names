@@ -1,0 +1,20 @@
+Variables in file: ./Steady_UppVel+LowVel.dat
+Elmer version: 8.4
+Elmer revision: 157dcc75
+Elmer compilation date: 2020-10-24
+Solver input file: steady_uppvel+lowvel.sif
+File started at: 2021/04/25 22:30:08
+Number of data nodes for each step
+  bc nodes: 0
+  polyline nodes: 100
+  circle nodes: 0
+  isocurve nodes: 0
+Data on different columns
+  1: Iteration step
+  2: Boundary condition
+  3: Node index
+  4: coordinate 1
+  5: coordinate 2
+  6: coordinate 3
+  7: temperature
+  8: depth
