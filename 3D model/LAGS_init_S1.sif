@@ -1,0 +1,168 @@
+
+
+!---LUA BEGIN
+! assert(loadfile('../COLD.lua'))()
+! assert(loadfile('../LAGS2.lua'))()
+!---LUA END
+
+$name = "readNC"
+
+Header
+  Mesh DB "." "#meshdb#"
+End
+
+Simulation  
+  Coordinate System = Cartesian 3D
+  Simulation Type = "Transient"
+  Timestepping Method = "BDF"
+  BDF Order = 1
+  TimeStep intervals = 1
+  TimeStep Sizes = 0.1
+  Output File = $name".result"
+  Max Output Level = 9
+  Initialize Dirichlet Conditions = Logical False
+  Extruded Mesh Levels = Integer #MLEV
+  Extruded Mesh Density = Variable Coordinate 1
+    Real MATC "1.0+2.5*tx"
+End
+
+Body 1
+  Name = "IceSheet"
+  Equation = 1
+End
+
+Equation 1
+  Active Solvers(7) = 1 2 3 4 5 6 7
+End
+
+Solver 1
+  Exec Solver = Before all
+  Equation = "Read observed velocity"
+  Procedure = "GridDataReader" "GridDataReader"
+  Filename = File #datadir#"/antarctica_m2slim.nc"
+
+  Read full array = Logical False
+!  Read full array = Logical True
+
+  X Dim Name = String "x" 
+  Y Dim Name = String "y"
+  X Var Name = String "x_coords" 
+  Y Var Name = String "y_coords"
+  Epsilon X = Real 1.0e-2 
+  Epsilon Y = Real 1.0e-2 
+  Variable 1 = "VX"
+  Variable 2 = "VY"
+  Enable Scaling = Logical False
+End
+
+Solver 2
+  Exec Solver = "before all" 
+  Equation = "read geometry"
+  procedure = "GridDataReader" "GridDataReader" 
+  Filename = File #datadir#"/bedmachineantarctica_2019-11-05_v01.nc"
+
+  Read full array = Logical False
+!  Read full array = Logical True
+
+  X Dim Name = String "x" 
+  Y Dim Name = String "y"
+  X Var Name = String "x" 
+  Y Var Name = String "y"
+  Epsilon X = Real 1.0e-4
+  Epsilon Y = Real 1.0e-4 
+  Variable 1 = "surface"
+  Variable 2 = "bed"
+  Variable 3 = "thickness"
+  Enable Scaling = Logical False
+End
+
+Solver 3
+  Exec Solver = "before all" 
+  Equation = "read Greve temperature"
+  Procedure = "GridDataReader" "GridDataReader"
+  Filename = File #datadir#"/ant08_b2_future25-06_hist0001.nc"
+
+  Read full array = Logical False
+!  Read full array = Logical True
+
+  X Dim Name = File "x"
+  Y Dim Name = File "y"
+  Z Dim Name = File "zeta_c"
+
+  X Var Name = File "x"
+  Y Var Name = File "y"
+  Z Var Name = File "sigma_level_c"
+
+  X Epsilon  = Real 1.0e-4 
+  Y Epsilon  = Real 1.0e-4 
+  Z Epsilon  = Real 1.0e-4
+
+  Variable 1 = File "temp_c"
+  Interpolation Offset = Real 273.15
+End
+
+Solver 4
+  Equation = "Read GHF"
+  Procedure = "GridDataReader" "GridDataReader"
+   
+  Filename = File #datadir#"/ant08_b2_future25-06_hist0001.nc"
+
+  Read full array = Logical False
+!  Read full array = Logical True
+
+  X Dim Name = File "x"
+  Y Dim Name = File "y"
+  X Var Name = File "x"
+  Y Var Name = File "y"
+  X Epsilon  = Real 1.0e-4 
+  Y Epsilon  = Real 1.0e-4 
+
+  Variable 1 = File "q_geo"
+  Variable 2 = File "as_perp_apl"
+End
+
+Solver 5
+  Exec Solver = Before all
+  Equation = "Read old drag coefficient"
+  Procedure = "GridDataReader" "GridDataReader"
+  Filename = File #BETA_GUESS
+
+  Read full array = Logical False
+!  Read full array = Logical True
+
+  X Dim Name = String "x" 
+  Y Dim Name = String "y"
+  X Var Name = String "x" 
+  Y Var Name = String "y"
+  Epsilon X = Real 1.0e-2 
+  Epsilon Y = Real 1.0e-2 
+  Variable 1 = "beta"
+  Enable Scaling = Logical False
+End
+
+Solver 6
+  Exec Solver = before all
+  equation = "Read surface mass balance"
+  procedure = "GridDataReader" "GridDataReader"
+  Filename = File #SMB_DATA
+
+  X Dim Name = String "nx"
+  Y Dim Name = String "ny"
+  X Var Name = String "x_coord"
+  Y Var Name = String "y_coord"
+  Epsilon X = Real 1.0e-2
+  Epsilon Y = Real 1.0e-2
+  Variable 1 = smbref
+  Enable Scaling = Logical False
+End
+
+Solver 7
+  Exec Solver = String "after timestep"
+  Equation = String "ResultOutput"
+  Procedure = File "ResultOutputSolve" "ResultOutputSolver"
+  Output Directory = File #outdir
+  Output File Name = File $name
+  Output Format = String "vtu"
+  Save Geometry Ids = Logical True
+  Vtu Format = Logical True
+End

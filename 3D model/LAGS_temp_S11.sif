@@ -1,0 +1,576 @@
+
+!---LUA BEGIN
+! assert(loadfile('../COLD.lua'))()
+! assert(loadfile('../LAGS2.lua'))()
+!---LUA END
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$name="LAGS_S13_c1"
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+Header
+  Mesh DB "." "#meshdb#"
+End
+
+Constants
+  Water Density = Real #rhoo
+  ! needed for rheology
+  Gas Constant = Real 8.314 !Joule/mol x  K 
+
+  Sea Spring Timestep Size = Real 0.109
+
+  ! for calculating grounded basal melt rate from temperature residual:
+  Ice Density = Real #rhoi_si   ! in kg/m^3
+  Latent Heat = Real #Lf        ! in Joules/kg
+
+!  ! for calculating grounded basal melt rate from temperature residual:
+!  Ice Density SI = Real #rhoi_si   ! in kg/m^3
+!  Latent Heat SI = Real #Lf        ! in Joules/kg
+
+End
+
+Simulation
+  Coordinate System = Cartesian 3D
+  Simulation Type = Steady State
+
+  Extruded Mesh Levels = #MLEV
+  Extruded Mesh Density = Variable Coordinate 1
+    Real MATC "1.0 + 2.5 * tx[0]"
+
+  Steady State Min Iterations = 1
+  Steady State Max Iterations = 1
+
+  Output File = $name".result"
+  Output Intervals(1) = 1
+
+  Restart File = "../../LAGS2_S12_S_c1/mesh2D_LAGS2/LAGS_S12_c1_.result"
+
+  Restart Before Initial Conditions = Logical True
+  Initialize Dirichlet Conditions = Logical False
+
+  Max Output Level = 9
+
+End
+
+!**************************************************************
+! Body
+!**************************************************************
+Body 1
+  Name = "glacier"
+  Equation = 1
+  Material = 1
+  Body Force = 1
+  Initial Condition = 1
+End
+Body 2
+  Name = "Bed"
+  Equation = 2
+  Body Force = 1
+  Material = 1
+  Initial Condition = 1
+End
+Body 3
+  Name = "uppersurface"
+  Equation = 3
+  Body Force = 1
+  Material = 1
+  Initial Condition = 1
+End
+
+!***************************************************
+Initial Condition 1
+  Friction Load = Real 0.0 !Friction Load is only need for output
+  Mesh Velocity = Real 0.0
+  Temperature Homologous = Variable temp_c
+    Real lua "K2C(tx[0])"
+End
+
+
+!***************************************************
+Body Force 1
+
+  Flow BodyForce 1 = Real 0.0                          
+  Flow BodyForce 2 = Real 0.0                          
+  Flow BodyForce 3 = Real #gravity
+
+  Temperature Volume Source = Equals W ! The volumetric heat source 
+End
+
+!***************************************************
+Material 1
+  sea level = Real #zsl
+  
+  Density =  Real #rhoi
+
+  Cauchy = Logical True
+
+  Viscosity Model = String "power law"
+  Viscosity Exponent = Real #m
+ 
+! Viscosity defined as mu*EF^2 to ensure >0 and to 
+! use mu as initial guess (here EF is an enhancement factor)
+  Viscosity = Variable bottom EF, mu
+    Real procedure "ElmerIceUSF" "Asquare_Scaled"
+
+!  Viscosity Model = String "Glen"
+!  Glen Exponent = Real #m
+!  Glen Enhancement Factor = Variable "bottom EF"
+!    Real lua "ConvertEF(tx[0],0.1)"
+!  Viscosity = Real 1.0 
+!  Rate Factor 1 = Real #A1
+!  Rate Factor 2 = Real #A2
+!  Activation Energy 1 = Real #Q1
+!  Activation Energy 2 = Real #Q2
+!  Temperature Field Variable = String "Temperature Homologous"
+!  Limit Temperature = Real -10.0e00
+
+  Temperature Heat Capacity = Variable Temperature
+    Real lua "capacity(tx[0])*yearinsec^(2.0)"
+  Temperature Heat Conductivity = Variable Temperature
+    Real lua "conductivity(tx[0])*yearinsec*Pa2MPa"
+  Temperature Upper Limit = Variable Pressure
+     Real lua "pressuremelting(tx[0])"
+  Temperature Lower Limit = Real 0.0
+
+  Critical Shear Rate = Real 1.0e-10
+End
+
+!****************************************************************
+!Equation
+!****************************************************************
+Equation 1 
+  Active Solvers(10) = 1 2 3 4 6 8 9 13 14 15
+  Convection = Computed 
+  Flow Solution Name = String "Flow Solution"   
+  NS Convect = Logical False
+End
+
+Equation 2 !bed
+  Active Solvers(4) = 5 7 11 12
+  Convection = Computed
+  Flow Solution Name = String "Flow Solution"
+  Friction Load Mask = String "GroundedMask"
+  NS Convect = Logical False
+End
+
+Equation 3
+  Active Solvers(1) = 10 
+  Convection = Computed
+  Flow Solution Name = String "Flow Solution"
+  NS Convect = Logical False
+End
+
+!***************************************************
+!Solver
+!***************************************************
+Solver 1
+  Exec Solver = Before simulation
+  Equation = "MapCoordinate"
+  Procedure = "StructuredMeshMapper" "StructuredMeshMapper"
+  Active Coordinate = Integer 3
+
+  Top Surface Variable Name = String "FS upper"
+  bottom surface variable name = String "FS lower"
+
+  Dot Product Tolerance = Real 0.001
+  Displacement Mode = Logical False
+  Minimum Height = Real #MINH
+  Correct Surface = Logical True
+
+  Mesh Velocity Variable = String "Mesh Velocity 3"
+  Mesh Velocity First Zero = Logical True
+End
+
+Solver 2
+!  Exec Solver = never
+  Exec Solver = "before all"
+  equation = "read temperature"
+  procedure = "GridDataReader" "GridDataReader"
+  Filename = File #datadir#"antarctica_5km_dev1.0.nc"
+  X Dim Name = String "x1"
+  Y Dim Name = String "y1"
+  X Var Name = String "x1"
+  Y Var Name = String "y1"
+  Epsilon X = Real 1.0e-2
+  Epsilon Y = Real 1.0e-2
+  Interpolation Bias = Real 0.0
+  Interpolation Multiplier = Real 1.0
+  Variable 1 = temp
+  Variable 2 = bheatflx_shapiro
+  Variable 3 = bheatflx_fox
+  Enable Scaling = Logical False
+  Flow Solver Name = String "Flow Solution"
+  Flow Loads Name = String "Flow Solution Loads"
+End
+
+Solver 3
+  Exec Solver = never
+!  Exec Solver = "before all" 
+  equation = "Geothermal Heat Flux"
+  procedure = "GridDataReader" "GridDataReader" 
+  Filename = File "/short/m68/cxz581/Fleming/V4/5temperature/GHF_WIS.nc"
+  X Dim Name = String "x_lon" 
+  Y Dim Name = String "y_lat"
+  X Var Name = String "x_lon" 
+  Y Var Name = String "y_lat"
+  Epsilon X = Real 1.0e-2 
+  Epsilon Y = Real 1.0e-2 
+  Interpolation Bias = Real 0.0 
+  Interpolation Multiplier = Real 1.0 
+  Variable 1 = ghf
+  Enable Scaling = Logical False
+  Flow Solver Name = String "Flow Solution"
+  Flow Loads Name = String "Flow Solution Loads"
+End
+
+! Normals solver needed for friction heating at bed
+Solver 4
+  Equation = "NormalVector" 
+  Exec Solver = Before Timestep
+  Procedure = "ElmerIceSolvers" "ComputeNormalSolver"
+  Variable = String "Normal Vector" 
+  ! in 3dimensional simulations we have 3 entries
+  Variable DOFs = 3
+  !NB: does not need to actually solve a matrix, hence no BW optimization needed
+  Optimize Bandwidth = Logical False 
+  ! if set to True, all boundary normals would be computed by default
+!  ComputeAll = Logical False
+  Flow Solver Name = String "Flow Solution"
+  Flow Loads Name = String "Flow Solution Loads"
+End
+
+! needed for friction USF
+!variable created for output purpose, to be executed at the beginning ONLY on the BED
+Solver 5 
+  Equation = "Dummy"
+  Procedure = "DummySolver" "DummySolver"
+  Variable = String "Friction Load" !variable created for output purpose
+  Variable DOFs = 1
+  Flow Solver Name = String "Flow Solution"
+  Flow Loads Name = String "Flow Solution Loads"
+End
+
+!Navier Solver
+Solver 6
+  Exec Solver = Never
+  Equation = "Navier-Stokes"
+
+  Stabilization Method = Stabilized
+  Flow Model = Stokes
+
+  Optimize Bandwidth = True
+  
+  !mandatory to save bulk stiffness matrix
+  Calculate Loads = Logical True
+
+  Linear System Solver = Direct
+  Linear System Direct Method = mumps
+  mumps percentage increase working space = integer 150
+
+  !Linear System Iterative Method = BiCGStabL
+  Linear System Preconditioning = "ILU2"
+  Linear System Max Iterations = 1000
+  Linear System Convergence Tolerance = 1.0E-8
+  Linear System Abort Not Converged = True 
+
+  Nonlinear System Max Iterations = Integer 100
+  Nonlinear System Convergence Tolerance  = Real 1.0e-8
+  Nonlinear System Newton After Iterations = Integer 500
+  Nonlinear System Newton After Tolerance = 1.0e-10
+!  Nonlinear System Relaxation Factor = 1.00
+  ! reset newton to false each new time step
+  Nonlinear System Reset Newton = Logical True
+
+  Steady State Convergence Tolerance = Real 1.0e-5
+  
+  Exported Variable 1 = String "Depth"
+  Exported Variable 1 DOFs = 1
+  Exported Variable 2 = String "Height"
+  Exported Variable 2 DOFs = 1
+  Exported Variable 3 = String "bed_ele"
+  Exported Variable 3 DOFs = 1
+  Exported Variable 4 = String "bheatflx_fox"
+  Exported Variable 4 DOFs = 1
+  Exported Variable 5 = String "bheatflx_shapiro"
+  Exported Variable 5 DOFs = 1
+  Exported Variable 6 = String "temp"
+  Exported Variable 6 DOFs = 1
+  Exported Variable 7 = String "Mesh Velocity"
+  Exported Variable 7 DOFs = 3
+  Exported Variable 8 = beta
+  Exported Variable 8 DOFS = Integer 1
+
+End
+
+!stress solver needed for friction heating at bed
+!after NS, to be executed ONLY on the BED
+Solver 7
+!  Exec Solver = never
+  Equation = "ForceToStress"
+  Procedure = File "ElmerIceSolvers" "ForceToStress"
+  Variable = String "Friction Heating"
+  Variable DOFs = 1
+  Force Variable Name = String "Friction Load"
+
+  Linear System Solver = Direct
+  Linear System Direct Method = mumps
+  mumps percentage increase working space = integer 100
+  !Linear System Solver = "Iterative"
+  !Linear System Iterative Method = "BiCGStab"
+  !Linear System Max Iterations = 500
+  Linear System Convergence Tolerance = 1.0E-05
+  Linear System Abort Not Converged = True
+  !Linear System Preconditioning = "ILU0"
+  !Linear System Residual Output = 1
+  Flow Solver Name = String "Flow Solution"
+  Flow Loads Name = String "Flow Solution Loads"
+End
+
+!Compute the heat generated by ice deformation
+Solver 8
+  Equation = DeformationalHeat
+  Variable = W
+  Variable DOFs = 1
+
+  procedure =  "ElmerIceSolvers" "DeformationalHeatSolver"
+
+  Linear System Solver = direct
+  Linear System direct Method = mumps
+  !Linear System direct Method = umfpack
+  mumps percentage increase working space = integer 100          !!!
+
+  Flow Solver Name = String "Flow Solution"
+  Flow Loads Name = String "Flow Solution Loads"
+End
+
+!Homologous temperature solver
+Solver 9
+  Equation = String "Homologous Temperature Equation"
+  Procedure =  File "ElmerIceSolvers" "TemperateIceSolver"
+  Variable = String "Temperature"
+  Variable DOFs = 1
+                                                                             
+  Linear System Solver = Direct
+  Linear System Direct Method = mumps
+  mumps percentage increase working space = integer 100
+
+!  Linear System Solver = "Iterative"
+!  Linear System Iterative Method = "BiCGStabL"
+!  Linear System Iterative Method = "BiCGStab"
+!  Bicgstabl Polynomial Degree = 4
+!  Linear System Max Iterations = 500
+  Linear System Convergence Tolerance = 1.0E-07
+!  Linear System Abort Not Converged = True
+!  Linear System Preconditioning = "ILU2"
+!  Linear System Preconditioning = "ILU1"
+!  Linear System Preconditioning = "ILU0"
+!  Linear System Preconditioning = "None"
+!  Linear System Residual Output = 1
+
+  Steady State Convergence Tolerance = 1.0E-10
+
+  Nonlinear System Convergence Tolerance = 1.0E-07
+  Nonlinear System Max Iterations = 300
+  Nonlinear System Relaxation Factor = 0.1
+
+  ! uses the contact algorithm (aka Dirichlet algorithm)
+  !-----------------------------------------------------
+  Apply Dirichlet = Logical True
+
+  Stabilize = True
+
+  Exported Variable 1 = String "Temperature Homologous"
+  Exported Variable 1 DOFs = 1
+  Exported Variable 2 = String "Temperature Residual"
+  Exported Variable 2 DOFs = 1
+
+  Loop While Unconstrained Nodes = Logical True
+End
+
+Solver 10 
+  Equation = "Emergence velocity"
+  Procedure = "ElmerIceSolvers" "GetEmergenceVelocity"
+  Variable = -dofs 1 EmergenceVelocity
+End
+
+Solver 11
+  Equation = "Emergence velocity (lower)"
+  Procedure = "ElmerIceSolvers" "GetEmergenceVelocity"
+  Variable = -dofs 1 EmergenceVelocity_LS
+End
+
+Solver 12
+  Exec Solver = "after timestep"
+  Equation = "GroundedBasalMelt"
+  Procedure = File "GroundedMelt" "GroundedMelt"
+  Variable = String "GroundedMelt"
+  Variable DOFs = 1
+!  GHF variable name = String "q_geo"
+!  heat variable name = String "Friction Load"
+  heat variable name = String "Temperature Residual"
+  Weights variable name = String "Friction heating boundary weights"
+End
+
+! save data, save materials
+Solver 13
+  Exec Solver = After saving
+  Equation = "SaveMaterials"
+  Variable = String -nooutput dummyvar
+  
+  Procedure = File "SaveData" "SaveMaterials"
+  
+  Parameter 1 =  String "Viscosity"
+!  Parameter 2 =  String "Glen Enhancement Factor"
+!  Parameter 2 =  String "Temperature"
+
+End
+
+Solver 14
+  Exec Solver = After saving
+  Equation = "SaveBoundary"
+  Variable = String -nooutput dummyvar2
+  
+  Procedure = File "SaveData" "SaveBoundaryValues"
+  
+  Parameter 1  = Friction Load
+  Parameter 2  = Friction Heating
+  Parameter 3  = Grounded melt
+End
+
+Solver 15
+  Exec Solver = After saving
+  Equation = String "ResultOutput"
+  Procedure = File "ResultOutputSolve" "ResultOutputSolver"
+  Output Directory = File #outdir
+  Output File Name  = file "Output_$name""  !"
+  Output Format = String "vtu"
+  Vtu Format = logical true
+  Binary Output = True
+  Single Precision = True
+  Save Geometry Ids = Logical True
+  Scalar Field 1  = EmergenceVelocity
+  Scalar Field 2  = q_geo
+  Scalar Field 3  = Temperature Homologous
+  Scalar Field 4  = Temperature 
+  Scalar Field 5  = groundedmask
+  Scalar Field 6  = Alpha
+  Scalar Field 7  = Friction Load
+  Scalar Field 8  = Friction Heating
+  Scalar Field 9  = Viscosity
+  Scalar Field 10 = mu
+  Scalar Field 11 = "W"
+  Scalar Field 12 = Temperature residual
+  Scalar Field 13 = smbref
+  Scalar Field 14 = bmb
+  Scalar Field 15 = "bottom EF"
+  Scalar Field 16 = Height
+  Scalar Field 17 = Depth
+  Scalar Field 18 = EmergenceVelocity_ls
+  Scalar Field 19 = GroundedMelt
+  Scalar Field 20 = "Friction heating boundary weights"
+  Vector Field 1 = Velocity 
+End
+
+
+!*************************************
+Boundary Condition 1 
+  Name = "front"
+  Target Boundaries(1)  = 1 
+
+  External Pressure = Variable Coordinate 3
+      Real lua "sw_pressure(tx[0])"
+End
+
+Boundary Condition 2
+  Name = "inland_boundary"
+  Target Boundaries(1)  = 2
+
+  Normal-Tangential Velocity = Logical True
+  Slip Coefficient 1 = Real 10.0
+  Slip Coefficient 2 = Real 0.001
+  Slip Coefficient 3 = Real 0.001
+
+End
+
+Boundary Condition 3
+  Name = "bed"
+  Body Id = 2
+
+  Save Line = Logical True  
+  Save Scalars = logical true
+
+  Normal-Tangential Velocity = Logical True
+ 
+  Velocity 1 = Variable bmb, GroundedMask
+    Real lua "bmb_as_vel(tx[0],tx[1])"
+!  Velocity 1 = Real 0.0
+ 
+  height = Real 0.0
+
+  Slip Coefficient 2 = Variable alpha, GroundedMask
+    Real procedure "ElmerIceUSF" "TenPowerA_masked"
+  Slip Coefficient 3 = Variable alpha, GroundedMask
+    Real procedure "ElmerIceUSF" "TenPowerA_masked"
+
+  External Pressure = Variable Coordinate 3
+      Real lua "sw_pressure(tx[0])"
+
+  Slip Coefficient 1 = Variable Coordinate 3
+    Real Procedure "ElmerIceUSF" "SeaSpring"
+  Compute Sea Spring = Logical True
+
+  !-------------------
+  ! friction heat
+  !--------------------
+  Friction Load = Variable Velocity 1            
+    Real Procedure  "ElmerIceUSF" "getFrictionLoads"
+
+  Temperature Load = Variable Velocity 1
+    Real Procedure  "ElmerIceUSF" "getFrictionLoads"  
+
+  ! for friction heating (and GHF):
+  Mass Consistent Normals = Logical True 
+  ComputeNormal = Logical True
+
+  !--------------------------------------------------------------------
+  ! Dirichlet condition (pressure melting temperature) for floating ice
+  Temperature Condition = Variable GroundedMask
+    Real lua "0.5 - 1.0 - tx[0]"
+  Temperature = Variable Pressure
+    Real lua "pressuremelting_salinity(tx[0])"
+
+  !-----------------------------------------------
+  ! geothermal heatflux (imposed for grounded ice)
+  Temperature Flux BC = Logical True
+  Temperature Heat Flux = Variable q_geo  ! bheatflx_shapiro ! bheatflx_fox
+    Real lua "tx[0]*yearinsec*1.0E-06"
+
+End
+
+!surface
+Boundary Condition 4
+  Name = "surface"
+  Body Id = 3
+  Target Boundaries(1) = 4
+
+  Save Scalars = logical true
+
+  Save Line = Logical True
+
+  Depth = Real 0.0
+
+  Normal-Tangential Velocity = Logical True
+
+  Slip Coefficient 1 = Variable vx, vy, velocity 1, smbref
+    Real procedure "USFs" "ConstrainEmergVel"
+
+!  Velocity 1 = variable smbref
+!    Real lua "0.0 - tx[0]"
+
+!  Temperature = Equals temp_c
+  Temperature = Variable temp
+    Real lua "tx[0] + 273.15"
+
+  ComputeNormal = Logical True
+End
+
